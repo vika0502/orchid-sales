@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>沅恆花藝營運儀表板</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- PapaParse for CSV Parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #f8fafc;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- Header Area -->
+    <header class="bg-emerald-800 text-white shadow-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center space-x-3 w-full sm:w-auto">
+                <div class="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm shrink-0">
+                    <i class="fa-solid fa-seedling text-emerald-300 text-2xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl sm:text-2xl font-bold tracking-tight">沅恆花藝 營運儀表板</h1>
+                    <p class="text-xs text-emerald-200">銷售明細 CSV 自動解析與比率統計</p>
+                </div>
+            </div>
+
+            <!-- Upload File Button -->
+            <div class="w-full sm:w-auto flex flex-wrap items-center justify-end gap-2">
+                <button type="button" onclick="downloadSampleCSV()" class="bg-emerald-700/60 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-1.5 border border-emerald-600 active:scale-95 w-full sm:w-auto">
+                    <i class="fa-solid fa-download text-emerald-200"></i>
+                    <span>下載完整 CSV 範例檔</span>
+                </button>
+                <label class="cursor-pointer bg-white text-emerald-900 hover:bg-emerald-50 px-5 py-2.5 rounded-xl text-sm font-semibold shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center space-x-2 border border-emerald-100 active:scale-95 w-full sm:w-auto">
+                    <i class="fa-solid fa-file-csv text-emerald-600 text-lg"></i>
+                    <span id="upload-btn-text">選擇 CSV 檔</span>
+                    <input type="file" id="csvFileInput" accept=".csv" class="hidden" onchange="handleFileUpload(event)">
+                </label>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 flex-grow w-full">
+        
+        <!-- Error & Message Alert Box -->
+        <div id="alert-box" class="hidden bg-rose-50 border-l-4 border-rose-500 p-4 rounded-r-xl shadow-sm">
+            <div class="flex items-start">
+                <div class="shrink-0 text-rose-500">
+                    <i class="fa-solid fa-triangle-exclamation text-xl"></i>
+                </div>
+                <div class="ml-3 flex-grow">
+                    <h3 class="text-sm font-bold text-rose-800" id="alert-title">檔案解析失敗</h3>
+                    <div class="text-xs text-rose-700 mt-1 whitespace-pre-line" id="alert-message">請確認 CSV 檔案格式與欄位名稱。</div>
+                </div>
+                <button type="button" onclick="closeAlert()" class="ml-auto text-rose-400 hover:text-rose-600">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Status Indicator Bar & Format Hint -->
+        <div id="status-bar" class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div class="flex items-center space-x-2.5">
+                <span id="status-dot" class="w-3 h-3 rounded-full bg-slate-300 animate-pulse"></span>
+                <span id="status-text" class="text-sm font-medium text-slate-600">尚未載入資料，請上傳報表或點擊右上角下載標準範例檔</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+                <span class="text-slate-400 font-medium">支援欄位：</span>
+                <span class="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-mono border border-indigo-200">月份</span>
+                <span class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">客戶</span>
+                <span class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">金額</span>
+                <span class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">品項</span>
+                <span class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">數量(對/盆)</span>
+                <span class="bg-amber-50 text-amber-700 px-2 py-0.5 rounded font-mono border border-amber-200">總支出費用</span>
+                <span class="bg-amber-50 text-amber-700 px-2 py-0.5 rounded font-mono border border-amber-200">人事費用</span>
+                <div id="month-select-box" class="hidden items-center ml-2">
+                    <span class="text-slate-500 mr-1.5 font-bold">資料月份：</span>
+                    <select id="monthFilterSelect" onchange="onMonthFilterChange()" class="bg-emerald-50 text-emerald-900 border border-emerald-300 font-semibold text-xs rounded-lg px-2.5 py-1 focus:ring-2 focus:ring-emerald-500 outline-none">
+                        <option value="ALL">全部月份加總</option>
+                    </select>
+                </div>
+                <div id="file-info-tag" class="hidden text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono px-3 py-1 rounded-lg">
+                    -
+                </div>
+            </div>
+        </div>
+
+        <!-- 5 Core Metric Cards (Includes Profit & Expense) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-5">
+            <!-- Card 1: Total Revenue -->
+            <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">總營業額</span>
+                    <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                        <i class="fa-solid fa-hand-holding-dollar text-base"></i>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <h3 id="card-revenue" class="text-xl sm:text-2xl font-extrabold text-slate-900 font-mono">--</h3>
+                    <p class="text-xs text-slate-400 mt-1 font-medium">銷售金額總和</p>
+                </div>
+            </div>
+
+            <!-- Card 2: Total Expense -->
+            <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">總支出費用</span>
+                    <div class="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                        <i class="fa-solid fa-receipt text-base"></i>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <h3 id="card-expense" class="text-xl sm:text-2xl font-extrabold text-slate-900 font-mono">--</h3>
+                    <p class="text-xs text-slate-400 mt-1 font-medium">營業各項支出總計</p>
+                </div>
+            </div>
+
+            <!-- Card 3: Net Profit / Loss -->
+            <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">營運淨損益</span>
+                    <div id="profit-icon-box" class="w-9 h-9 rounded-xl bg-slate-50 text-slate-500 flex items-center justify-center">
+                        <i id="profit-icon" class="fa-solid fa-scale-balanced text-base"></i>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <h3 id="card-net-profit" class="text-xl sm:text-2xl font-extrabold text-slate-900 font-mono">--</h3>
+                    <p id="card-net-profit-sub" class="text-xs text-slate-400 mt-1 font-medium">營業收入 - 總支出</p>
+                </div>
+            </div>
+
+            <!-- Card 4: Total Customers & Quantity -->
+            <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">客戶與總銷量</span>
+                    <div class="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                        <i class="fa-solid fa-boxes-packing text-base"></i>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <h3 id="card-quantity" class="text-xl sm:text-2xl font-extrabold text-slate-900 font-mono">--</h3>
+                    <p id="card-customer-count-sub" class="text-xs text-slate-400 mt-1 font-medium">-- 家客戶</p>
+                </div>
+            </div>
+
+            <!-- Card 5: Top Product -->
+            <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">最熱銷品項</span>
+                    <div class="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                        <i class="fa-solid fa-crown text-base"></i>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <h3 id="card-top-product" class="text-lg sm:text-xl font-bold text-slate-900 truncate">--</h3>
+                    <p id="card-top-product-sub" class="text-xs text-slate-400 mt-1 font-medium">最高銷量品項</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dynamic Visualization Charts Section -->
+        <div id="charts-section" class="hidden grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Top Customers Chart -->
+            <div class="lg:col-span-2 bg-white p-5 sm:p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-800">主要客戶營業額排行 (前10名)</h2>
+                        <p class="text-xs text-slate-500">掌握核心營收來源</p>
+                    </div>
+                    <span class="text-xs bg-emerald-50 text-emerald-700 font-medium px-2.5 py-1 rounded-lg">金額排行</span>
+                </div>
+                <div class="relative flex-grow min-h-[250px] w-full">
+                    <canvas id="customerChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Product Breakdown Chart -->
+            <div class="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-800">熱銷品項結構</h2>
+                        <p class="text-xs text-slate-500">銷量佔比分析 (Top 5 + 其他)</p>
+                    </div>
+                    <span class="text-xs bg-teal-50 text-teal-700 font-medium px-2.5 py-1 rounded-lg">銷量比例</span>
+                </div>
+                <div class="relative flex-grow min-h-[250px] flex items-center justify-center">
+                    <canvas id="productChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Expense Section (Shows when CSV contains Expense data) -->
+        <div id="expense-section" class="hidden grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-file-invoice-dollar text-rose-600"></i>
+                            <span>營業支出分類明細表</span>
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-0.5">營運各項主要成本支出與佔比</p>
+                    </div>
+                    <span id="expense-total-badge" class="text-xs bg-rose-50 text-rose-700 font-bold px-3 py-1 rounded-full border border-rose-200">--</span>
+                </div>
+                <div class="overflow-x-auto custom-scrollbar">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-slate-100/80 text-slate-600 text-xs uppercase">
+                            <tr>
+                                <th class="py-3 px-4 font-semibold">支出類別</th>
+                                <th class="py-3 px-4 font-semibold text-right">金額 (元)</th>
+                                <th class="py-3 px-4 font-semibold text-right">佔總支出比例</th>
+                                <th class="py-3 px-4 font-semibold text-right">佔營業額比例</th>
+                            </tr>
+                        </thead>
+                        <tbody id="expense-table-body" class="divide-y divide-slate-100 text-sm">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Expense Breakdown Chart -->
+            <div class="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-800">支出結構分佈</h2>
+                        <p class="text-xs text-slate-500">成本與費用佔比圖</p>
+                    </div>
+                    <span class="text-xs bg-rose-50 text-rose-700 font-medium px-2.5 py-1 rounded-lg">支出佔比</span>
+                </div>
+                <div class="relative flex-grow min-h-[240px] flex items-center justify-center">
+                    <canvas id="expenseChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Tables Row (Customer & Product) -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <!-- Table 1: Customer Sales & Percentage Table -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col">
+                <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-users text-emerald-600"></i>
+                            <span>客戶營業額與佔比明細</span>
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-0.5">客戶金額加總與佔營業額比例</p>
+                    </div>
+                    <span id="customer-badge" class="text-xs bg-slate-100 text-slate-600 font-semibold px-2.5 py-1 rounded-full">--</span>
+                </div>
+                <div class="overflow-x-auto custom-scrollbar max-h-[460px] overflow-y-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-slate-100/80 text-slate-600 text-xs uppercase sticky top-0 z-10 backdrop-blur-md">
+                            <tr>
+                                <th class="py-3 px-4 font-semibold">排名</th>
+                                <th class="py-3 px-4 font-semibold">客戶</th>
+                                <th class="py-3 px-4 font-semibold text-right">金額 (元)</th>
+                                <th class="py-3 px-4 font-semibold text-right">佔營業額比例</th>
+                            </tr>
+                        </thead>
+                        <tbody id="customer-table-body" class="divide-y divide-slate-100 text-sm">
+                            <tr>
+                                <td colspan="4" class="py-12 text-center text-slate-400 text-xs">請選擇並上傳包含「客戶」與「金額」的 CSV 檔案</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Table 2: Product Quantity Table -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col">
+                <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-leaf text-teal-600"></i>
+                            <span>品項銷量統計表</span>
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-0.5">品項名稱與銷售數量 (對/盆)</p>
+                    </div>
+                    <span id="product-badge" class="text-xs bg-slate-100 text-slate-600 font-semibold px-2.5 py-1 rounded-full">--</span>
+                </div>
+                <div class="overflow-x-auto custom-scrollbar max-h-[460px] overflow-y-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-slate-100/80 text-slate-600 text-xs uppercase sticky top-0 z-10 backdrop-blur-md">
+                            <tr>
+                                <th class="py-3 px-4 font-semibold">排名</th>
+                                <th class="py-3 px-4 font-semibold">品項</th>
+                                <th class="py-3 px-4 font-semibold text-right">數量 (對/盆)</th>
+                                <th class="py-3 px-4 font-semibold text-right">銷量比例</th>
+                            </tr>
+                        </thead>
+                        <tbody id="product-table-body" class="divide-y divide-slate-100 text-sm">
+                            <tr>
+                                <td colspan="4" class="py-12 text-center text-slate-400 text-xs">請選擇並上傳包含「品項」與「數量(對/盆)」的 CSV 檔案</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- NEW: Monthly Comparison Section (Shows when multiple months or month column detected) -->
+        <div id="monthly-comparison-section" class="hidden space-y-6 pt-4 border-t-2 border-slate-200">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                        <i class="fa-solid fa-calendar-days text-indigo-600"></i>
+                        <span>跨月份營運對比分析</span>
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">按月份自動彙總營收、支出與損益消長</p>
+                </div>
+                <span class="text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold px-3 py-1 rounded-full">月度比較</span>
+            </div>
+
+            <!-- Monthly Comparison Charts Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Trend Line Chart -->
+                <div class="lg:col-span-2 bg-white p-5 sm:p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="text-base font-bold text-slate-800">月度營收與損益走勢圖</h3>
+                            <p class="text-xs text-slate-500">柱狀：營業額 vs 總支出 | 曲線：營運淨損益</p>
+                        </div>
+                    </div>
+                    <div class="relative flex-grow min-h-[280px] w-full">
+                        <canvas id="monthlyTrendChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Month-over-Month Summary Table -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col">
+                    <div class="p-5 border-b border-slate-100 bg-slate-50/50">
+                        <h3 class="text-base font-bold text-slate-800">各月關鍵財務比較表</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">營收與損益月度成長率</p>
+                    </div>
+                    <div class="overflow-x-auto custom-scrollbar flex-grow">
+                        <table class="w-full text-left border-collapse">
+                            <thead class="bg-slate-100/80 text-slate-600 text-xs uppercase">
+                                <tr>
+                                    <th class="py-3 px-3 font-semibold">月份</th>
+                                    <th class="py-3 px-3 font-semibold text-right">營業額</th>
+                                    <th class="py-3 px-3 font-semibold text-right">總支出</th>
+                                    <th class="py-3 px-3 font-semibold text-right">淨損益</th>
+                                </tr>
+                            </thead>
+                            <tbody id="monthly-summary-table-body" class="divide-y divide-slate-100 text-xs sm:text-sm">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Client & Product Monthly Changes Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Customer Monthly Change Table -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col">
+                    <div class="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                        <div>
+                            <h3 class="text-base font-bold text-slate-800">主要客戶跨月營業額比較</h3>
+                            <p class="text-xs text-slate-500">跨月金額消長變動</p>
+                        </div>
+                        <span id="monthly-cust-badge" class="text-xs bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-full font-medium">月度對比</span>
+                    </div>
+                    <div class="overflow-x-auto custom-scrollbar max-h-[380px] overflow-y-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead id="monthly-cust-thead" class="bg-slate-100/80 text-slate-600 text-xs uppercase sticky top-0 z-10 backdrop-blur-md">
+                            </thead>
+                            <tbody id="monthly-cust-tbody" class="divide-y divide-slate-100 text-xs sm:text-sm">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Product Monthly Change Table -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col">
+                    <div class="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                        <div>
+                            <h3 class="text-base font-bold text-slate-800">主要品項跨月銷量比較</h3>
+                            <p class="text-xs text-slate-500">銷量 (對/盆) 月度差異</p>
+                        </div>
+                        <span id="monthly-prod-badge" class="text-xs bg-teal-50 text-teal-700 px-2.5 py-1 rounded-full font-medium">銷量對比</span>
+                    </div>
+                    <div class="overflow-x-auto custom-scrollbar max-h-[380px] overflow-y-auto">
+                        <table id="monthly-prod-table" class="w-full text-left border-collapse">
+                            <thead id="monthly-prod-thead" class="bg-slate-100/80 text-slate-600 text-xs uppercase sticky top-0 z-10 backdrop-blur-md">
+                            </thead>
+                            <tbody id="monthly-prod-tbody" class="divide-y divide-slate-100 text-xs sm:text-sm">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-4 mt-8">
+        <div class="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500">
+            沅恆花藝 營運管理系統 · 動態 CSV 分析儀表板
+        </div>
+    </footer>
+
+    <!-- JavaScript Execution Logic -->
+    <script>
+        // Chart Instances Storage
+        let customerChartInstance = null;
+        let productChartInstance = null;
+        let expenseChartInstance = null;
+        let monthlyTrendChartInstance = null;
+
+        // Global State for Multi-Month Data
+        let globalRawRows = [];
+        let globalFileName = "";
+        let availableMonths = [];
+        let detectedMonthKey = null;
+
+        // Download Standard Sample CSV with Multiple Months Data
+        function downloadSampleCSV() {
+            const csvContent = "\uFEFF月份,客戶,金額,品項,數量(對/盆),總支出費用,人事費用,進花費用,花藝材料,固定房租與貸款,營運稅務與雜項\n" +
+                "9月,萬事達,64245,星空,61,633625,250398,140279,5810,122233,97305\n" +
+                "9月,元鐸,44600,日式,39,,,,,,\n" +
+                "9月,鑫陞,34600,星空 安靈,23,,,,,,\n" +
+                "9月,守實,22300,日式 安靈,14,,,,,,\n" +
+                "9月,陳韻一,20000,靈堂花(小),17,,,,,,\n" +
+                "9月,小布,19200,7株瓷盆,14,,,,,,\n" +
+                "9月,靜思園楊姐,14400,靈堂花(大),9,,,,,,\n" +
+                "9月,潔恩,12500,6株瓷盆,7,,,,,,\n" +
+                "10月,萬事達,101845,星空,91,727889,305503,224970,32230,122233,42953\n" +
+                "10月,小陳,100200,日式,42,,,,,,\n" +
+                "10月,元鐸,56100,星空 安靈,38,,,,,,\n" +
+                "10月,松興花苑,38400,日式 安靈,21,,,,,,\n" +
+                "10月,吉祥門,33700,靈堂花(大),21,,,,,,\n" +
+                "10月,陳韻一,31200,15株霸王/座,16,,,,,,\n" +
+                "10月,潔恩,28400,靈堂花(小),16,,,,,,\n" +
+                "10月,淨揚,27800,6株瓷盆,13,,,,,,\n" +
+                "10月,盛峰,27600,10株瓷盆,6,,,,,,";
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", "沅恆花藝_跨月營運報表範例.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Handle CSV File Upload
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            document.getElementById('upload-btn-text').innerText = file.name;
+            closeAlert();
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: 'greedy',
+                transformHeader: function(h) {
+                    return h.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+                },
+                complete: function(results) {
+                    globalRawRows = results.data;
+                    globalFileName = file.name;
+                    initMonthFilterAndProcess(results.data, file.name);
+                },
+                error: function(err) {
+                    showError("CSV 解析錯誤", "無法讀取該檔案，請確定是否為標準 CSV 格式。");
+                }
+            });
+        }
+
+        // Helper for Fuzzy Header Matching
+        function findColumnKey(headers, keywords) {
+            return headers.find(h => {
+                const cleanH = h.replace(/\s+/g, '').toLowerCase();
+                return keywords.some(kw => cleanH.includes(kw.toLowerCase()));
+            });
+        }
+
+        // Initialize Month Selector and Process Data
+        function initMonthFilterAndProcess(rows, fileName) {
+            if (!rows || rows.length === 0) {
+                showError("空白檔案", "上傳的 CSV 檔案無任何資料行。");
+                resetDashboard();
+                return;
+            }
+
+            const rawHeaders = Object.keys(rows[0]);
+            detectedMonthKey = findColumnKey(rawHeaders, ["月份", "月", "年月", "日期", "month"]);
+
+            const monthSelectBox = document.getElementById('month-select-box');
+            const monthSelect = document.getElementById('monthFilterSelect');
+
+            if (detectedMonthKey) {
+                const monthSet = new Set();
+                rows.forEach(r => {
+                    const m = r[detectedMonthKey];
+                    if (m && String(m).trim() !== '' && m !== '總計') {
+                        monthSet.add(String(m).trim());
+                    }
+                });
+
+                availableMonths = Array.from(monthSet);
+
+                if (availableMonths.length > 0) {
+                    monthSelectBox.classList.remove('hidden');
+                    monthSelectBox.classList.add('flex');
+                    monthSelect.innerHTML = '<option value="ALL">全部月份加總</option>' + 
+                        availableMonths.map(m => `<option value="${m}">${m}</option>`).join('');
+                } else {
+                    monthSelectBox.classList.add('hidden');
+                }
+            } else {
+                monthSelectBox.classList.add('hidden');
+                availableMonths = [];
+            }
+
+            // Execute full processing
+            processDataWithFilter();
+        }
+
+        function onMonthFilterChange() {
+            processDataWithFilter();
+        }
+
+        // Filter Rows and Execute Metrics Processing
+        function processDataWithFilter() {
+            if (!globalRawRows || globalRawRows.length === 0) return;
+
+            const selectedMonth = document.getElementById('monthFilterSelect').value;
+            let filteredRows = globalRawRows;
+
+            if (detectedMonthKey && selectedMonth !== 'ALL') {
+                filteredRows = globalRawRows.filter(r => String(r[detectedMonthKey]).trim() === selectedMonth);
+            }
+
+            processCSVData(filteredRows, globalRawRows, globalFileName);
+        }
+
+        // Process Parsed Data & Flexible Field Matching
+        function processCSVData(rows, allRows, fileName) {
+            const rawHeaders = Object.keys(allRows[0]);
+            
+            // Fuzzy Header Matching Logic
+            const customerKey = findColumnKey(rawHeaders, ["客戶", "客戶名稱", "買家", "單位"]);
+            const amountKey = findColumnKey(rawHeaders, ["金額", "小計", "營業額", "售價"]);
+            const productKey = findColumnKey(rawHeaders, ["品項", "產品", "花款", "名稱"]);
+            const qtyKey = findColumnKey(rawHeaders, ["數量", "對/盆", "盆", "對"]);
+
+            // Expense Header Keys
+            const totalExpKey = findColumnKey(rawHeaders, ["總支出費用", "總支出", "支出總額"]);
+            const hrExpKey = findColumnKey(rawHeaders, ["人事費用", "人事", "薪資費用"]);
+            const flowerExpKey = findColumnKey(rawHeaders, ["進花費用", "進花費", "進花"]);
+            const matExpKey = findColumnKey(rawHeaders, ["花藝材料", "材料費用", "材料費"]);
+            const rentExpKey = findColumnKey(rawHeaders, ["固定房租與貸款", "房租與貸款", "固定費用"]);
+            const miscExpKey = findColumnKey(rawHeaders, ["營運稅務與雜項", "稅務與雜項", "雜項"]);
+
+            const missingList = [];
+            if (!customerKey) missingList.push("客戶");
+            if (!amountKey) missingList.push("金額");
+            if (!productKey) missingList.push("品項");
+            if (!qtyKey) missingList.push("數量(對/盆)");
+
+            if (missingList.length > 0) {
+                const detectedHeadersText = rawHeaders.length > 0 ? rawHeaders.join(', ') : '無標題';
+                showError(
+                    "欄位配對失敗", 
+                    `無法找到以下關鍵欄位：[ ${missingList.join(', ')} ]。\n\n` +
+                    `📌 系統讀取到的欄位標題為：[ ${detectedHeadersText} ]\n` +
+                    `💡 建議：點擊右上角「下載完整 CSV 範例檔」對照標頭格式。`
+                );
+                resetDashboard();
+                return;
+            }
+
+            // Aggregation Storage for Current Filtered Rows
+            const customerMap = {};
+            const productMap = {};
+            let totalRevenue = 0;
+            let totalQuantity = 0;
+            let validRowsCount = 0;
+
+            let expSummary = {
+                total: 0,
+                hr: 0,
+                flower: 0,
+                mat: 0,
+                rent: 0,
+                misc: 0,
+                hasExpenseData: false
+            };
+
+            const selectedMonth = document.getElementById('monthFilterSelect').value;
+
+            if (detectedMonthKey && selectedMonth === 'ALL') {
+                // ALL MONTHS: Sum maximum expense reported for each unique month
+                const monthExpTracker = {};
+                rows.forEach((row) => {
+                    const m = row[detectedMonthKey] ? String(row[detectedMonthKey]).trim() : 'DEFAULT';
+                    if (!monthExpTracker[m]) {
+                        monthExpTracker[m] = { total: 0, hr: 0, flower: 0, mat: 0, rent: 0, misc: 0, hasData: false };
+                    }
+                    if (totalExpKey && parseNumber(row[totalExpKey]) > monthExpTracker[m].total) {
+                        monthExpTracker[m].total = parseNumber(row[totalExpKey]);
+                        monthExpTracker[m].hasData = true;
+                    }
+                    if (hrExpKey && parseNumber(row[hrExpKey]) > monthExpTracker[m].hr) {
+                        monthExpTracker[m].hr = parseNumber(row[hrExpKey]);
+                        monthExpTracker[m].hasData = true;
+                    }
+                    if (flowerExpKey && parseNumber(row[flowerExpKey]) > monthExpTracker[m].flower) {
+                        monthExpTracker[m].flower = parseNumber(row[flowerExpKey]);
+                        monthExpTracker[m].hasData = true;
+                    }
+                    if (matExpKey && parseNumber(row[matExpKey]) > monthExpTracker[m].mat) {
+                        monthExpTracker[m].mat = parseNumber(row[matExpKey]);
+                        monthExpTracker[m].hasData = true;
+                    }
+                    if (rentExpKey && parseNumber(row[rentExpKey]) > monthExpTracker[m].rent) {
+                        monthExpTracker[m].rent = parseNumber(row[rentExpKey]);
+                        monthExpTracker[m].hasData = true;
+                    }
+                    if (miscExpKey && parseNumber(row[miscExpKey]) > monthExpTracker[m].misc) {
+                        monthExpTracker[m].misc = parseNumber(row[miscExpKey]);
+                        monthExpTracker[m].hasData = true;
+                    }
+                });
+
+                Object.values(monthExpTracker).forEach(mExp => {
+                    if (mExp.total === 0 && mExp.hasData) {
+                        mExp.total = mExp.hr + mExp.flower + mExp.mat + mExp.rent + mExp.misc;
+                    }
+                    expSummary.total += mExp.total;
+                    expSummary.hr += mExp.hr;
+                    expSummary.flower += mExp.flower;
+                    expSummary.mat += mExp.mat;
+                    expSummary.rent += mExp.rent;
+                    expSummary.misc += mExp.misc;
+                    if (mExp.hasData) expSummary.hasExpenseData = true;
+                });
+            } else {
+                // SINGLE MONTH: Take the peak expense figures for that single month
+                rows.forEach((row) => {
+                    if (totalExpKey && parseNumber(row[totalExpKey]) > expSummary.total) {
+                        expSummary.total = parseNumber(row[totalExpKey]);
+                        expSummary.hasExpenseData = true;
+                    }
+                    if (hrExpKey && parseNumber(row[hrExpKey]) > expSummary.hr) {
+                        expSummary.hr = parseNumber(row[hrExpKey]);
+                        expSummary.hasExpenseData = true;
+                    }
+                    if (flowerExpKey && parseNumber(row[flowerExpKey]) > expSummary.flower) {
+                        expSummary.flower = parseNumber(row[flowerExpKey]);
+                        expSummary.hasExpenseData = true;
+                    }
+                    if (matExpKey && parseNumber(row[matExpKey]) > expSummary.mat) {
+                        expSummary.mat = parseNumber(row[matExpKey]);
+                        expSummary.hasExpenseData = true;
+                    }
+                    if (rentExpKey && parseNumber(row[rentExpKey]) > expSummary.rent) {
+                        expSummary.rent = parseNumber(row[rentExpKey]);
+                        expSummary.hasExpenseData = true;
+                    }
+                    if (miscExpKey && parseNumber(row[miscExpKey]) > expSummary.misc) {
+                        expSummary.misc = parseNumber(row[miscExpKey]);
+                        expSummary.hasExpenseData = true;
+                    }
+                });
+
+                if (expSummary.total === 0 && expSummary.hasExpenseData) {
+                    expSummary.total = expSummary.hr + expSummary.flower + expSummary.mat + expSummary.rent + expSummary.misc;
+                }
+            }
+
+            // Iterate Rows and Compute Sales Metrics
+            rows.forEach((row) => {
+                const custRaw = row[customerKey];
+                const amountRaw = row[amountKey];
+                const prodRaw = row[productKey];
+                const qtyRaw = row[qtyKey];
+
+                if (custRaw === '總計' || prodRaw === '總計') return;
+
+                const amount = parseNumber(amountRaw);
+                const qty = parseNumber(qtyRaw);
+
+                // Aggregate Customer Revenue
+                if (custRaw && String(custRaw).trim() !== '') {
+                    const custName = String(custRaw).trim();
+                    if (!customerMap[custName]) customerMap[custName] = 0;
+                    customerMap[custName] += amount;
+                    totalRevenue += amount;
+                }
+
+                // Aggregate Product Quantity
+                if (prodRaw && String(prodRaw).trim() !== '') {
+                    const prodName = String(prodRaw).trim();
+                    if (!productMap[prodName]) productMap[prodName] = 0;
+                    productMap[prodName] += qty;
+                    totalQuantity += qty;
+                }
+
+                validRowsCount++;
+            });
+
+            if (validRowsCount === 0) {
+                showError("無有效數據", "未在 CSV 檔案中找到可供計算的有效資料。");
+                resetDashboard();
+                return;
+            }
+
+            const sortedCustomers = Object.keys(customerMap)
+                .map(name => ({ name, amount: customerMap[name] }))
+                .sort((a, b) => b.amount - a.amount);
+
+            const sortedProducts = Object.keys(productMap)
+                .map(name => ({ name, qty: productMap[name] }))
+                .sort((a, b) => b.qty - a.qty);
+
+            updateDashboardUI(sortedCustomers, sortedProducts, totalRevenue, totalQuantity, expSummary, fileName, validRowsCount);
+
+            // Process Monthly Breakdown if Month Column is present
+            if (detectedMonthKey && availableMonths.length > 0) {
+                processMonthlyComparison(allRows, rawHeaders, customerKey, amountKey, productKey, qtyKey, totalExpKey, hrExpKey, flowerExpKey, matExpKey, rentExpKey, miscExpKey);
+            } else {
+                document.getElementById('monthly-comparison-section').classList.add('hidden');
+            }
+        }
+
+        // Process Multi-Month Summary and Monthly Comparisons
+        function processMonthlyComparison(allRows, rawHeaders, customerKey, amountKey, productKey, qtyKey, totalExpKey, hrExpKey, flowerExpKey, matExpKey, rentExpKey, miscExpKey) {
+            const monthlyData = {};
+
+            availableMonths.forEach(m => {
+                monthlyData[m] = {
+                    month: m,
+                    revenue: 0,
+                    quantity: 0,
+                    expense: 0,
+                    expHasData: false,
+                    customers: {},
+                    products: {}
+                };
+            });
+
+            allRows.forEach(row => {
+                const mRaw = row[detectedMonthKey];
+                if (!mRaw) return;
+                const m = String(mRaw).trim();
+                if (!monthlyData[m]) return;
+
+                const custRaw = row[customerKey];
+                const amountRaw = row[amountKey];
+                const prodRaw = row[productKey];
+                const qtyRaw = row[qtyKey];
+
+                if (custRaw === '總計' || prodRaw === '總計') return;
+
+                const amount = parseNumber(amountRaw);
+                const qty = parseNumber(qtyRaw);
+
+                if (custRaw && String(custRaw).trim() !== '') {
+                    const custName = String(custRaw).trim();
+                    monthlyData[m].customers[custName] = (monthlyData[m].customers[custName] || 0) + amount;
+                    monthlyData[m].revenue += amount;
+                }
+
+                if (prodRaw && String(prodRaw).trim() !== '') {
+                    const prodName = String(prodRaw).trim();
+                    monthlyData[m].products[prodName] = (monthlyData[m].products[prodName] || 0) + qty;
+                    monthlyData[m].quantity += qty;
+                }
+
+                if (totalExpKey && parseNumber(row[totalExpKey]) > monthlyData[m].expense) {
+                    monthlyData[m].expense = parseNumber(row[totalExpKey]);
+                    monthlyData[m].expHasData = true;
+                }
+            });
+
+            // If expense wasn't directly given, sum up sub-expenses per month
+            allRows.forEach(row => {
+                const mRaw = row[detectedMonthKey];
+                if (!mRaw) return;
+                const m = String(mRaw).trim();
+                if (!monthlyData[m]) return;
+
+                if (monthlyData[m].expense === 0) {
+                    const hr = hrExpKey ? parseNumber(row[hrExpKey]) : 0;
+                    const fl = flowerExpKey ? parseNumber(row[flowerExpKey]) : 0;
+                    const mat = matExpKey ? parseNumber(row[matExpKey]) : 0;
+                    const rent = rentExpKey ? parseNumber(row[rentExpKey]) : 0;
+                    const misc = miscExpKey ? parseNumber(row[miscExpKey]) : 0;
+                    const subExp = hr + fl + mat + rent + misc;
+                    if (subExp > monthlyData[m].expense) {
+                        monthlyData[m].expense = subExp;
+                        monthlyData[m].expHasData = true;
+                    }
+                }
+            });
+
+            document.getElementById('monthly-comparison-section').classList.remove('hidden');
+
+            renderMonthlySummaryTable(monthlyData);
+            renderMonthlyTrendChart(monthlyData);
+            renderMonthlyCustomerComparison(monthlyData);
+            renderMonthlyProductComparison(monthlyData);
+        }
+
+        // Render Monthly Summary Table
+        function renderMonthlySummaryTable(monthlyData) {
+            const tbody = document.getElementById('monthly-summary-table-body');
+            let html = '';
+
+            availableMonths.forEach(m => {
+                const data = monthlyData[m];
+                const netProfit = data.revenue - data.expense;
+                const profitClass = netProfit >= 0 ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold';
+
+                html += `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="py-2.5 px-3 font-semibold text-slate-800">${escapeHtml(m)}</td>
+                        <td class="py-2.5 px-3 text-right font-mono text-slate-900">${formatNumber(data.revenue)}</td>
+                        <td class="py-2.5 px-3 text-right font-mono text-slate-600">${data.expHasData ? formatNumber(data.expense) : '--'}</td>
+                        <td class="py-2.5 px-3 text-right font-mono ${profitClass}">${data.expHasData ? (netProfit >= 0 ? '+' : '') + formatNumber(netProfit) : '--'}</td>
+                    </tr>
+                `;
+            });
+
+            tbody.innerHTML = html;
+        }
+
+        // Render Monthly Combo Trend Chart
+        function renderMonthlyTrendChart(monthlyData) {
+            const ctx = document.getElementById('monthlyTrendChart').getContext('2d');
+            const months = availableMonths;
+            const revData = months.map(m => monthlyData[m].revenue);
+            const expData = months.map(m => monthlyData[m].expense);
+            const netData = months.map(m => monthlyData[m].revenue - monthlyData[m].expense);
+
+            if (monthlyTrendChartInstance) {
+                monthlyTrendChartInstance.destroy();
+            }
+
+            monthlyTrendChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: months,
+                    datasets: [
+                        {
+                            type: 'line',
+                            label: '營運淨損益',
+                            data: netData,
+                            borderColor: '#059669',
+                            backgroundColor: 'rgba(5, 150, 105, 0.1)',
+                            borderWidth: 3,
+                            fill: false,
+                            tension: 0.3,
+                            yAxisID: 'y'
+                        },
+                        {
+                            type: 'bar',
+                            label: '營業額',
+                            data: revData,
+                            backgroundColor: 'rgba(13, 148, 136, 0.75)',
+                            borderRadius: 6,
+                            yAxisID: 'y'
+                        },
+                        {
+                            type: 'bar',
+                            label: '總支出',
+                            data: expData,
+                            backgroundColor: 'rgba(244, 63, 94, 0.75)',
+                            borderRadius: 6,
+                            yAxisID: 'y'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { grid: { display: false } },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: val => '$' + (val >= 1000 || val <= -1000 ? (val/1000) + 'k' : val)
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ` ${ctx.dataset.label}: NT$ ${formatNumber(ctx.raw)}`
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render Customer Comparison Table
+        function renderMonthlyCustomerComparison(monthlyData) {
+            const thead = document.getElementById('monthly-cust-thead');
+            const tbody = document.getElementById('monthly-cust-tbody');
+
+            let thHtml = `<tr><th class="py-2.5 px-3 font-semibold">客戶名稱</th>`;
+            availableMonths.forEach(m => {
+                thHtml += `<th class="py-2.5 px-3 font-semibold text-right">${escapeHtml(m)} (元)</th>`;
+            });
+            thHtml += `<th class="py-2.5 px-3 font-semibold text-right">增減變動</th></tr>`;
+            thead.innerHTML = thHtml;
+
+            // Combine all customers
+            const custSet = new Set();
+            availableMonths.forEach(m => {
+                Object.keys(monthlyData[m].customers).forEach(c => custSet.add(c));
+            });
+
+            const custArray = Array.from(custSet).map(cName => {
+                const vals = availableMonths.map(m => monthlyData[m].customers[cName] || 0);
+                const firstVal = vals[0] || 0;
+                const lastVal = vals[vals.length - 1] || 0;
+                const diff = lastVal - firstVal;
+                return { name: cName, vals, diff, maxVal: Math.max(...vals) };
+            }).sort((a, b) => b.maxVal - a.maxVal);
+
+            let tbHtml = '';
+            custArray.forEach(item => {
+                const diffClass = item.diff > 0 ? 'text-emerald-600 font-semibold' : (item.diff < 0 ? 'text-rose-600 font-semibold' : 'text-slate-400');
+                const diffSymbol = item.diff > 0 ? '+' : '';
+
+                tbHtml += `<tr class="hover:bg-slate-50 transition-colors"><td class="py-2.5 px-3 font-semibold text-slate-800">${escapeHtml(item.name)}</td>`;
+                item.vals.forEach(v => {
+                    tbHtml += `<td class="py-2.5 px-3 text-right font-mono text-slate-700">${v > 0 ? formatNumber(v) : '-'}</td>`;
+                });
+                tbHtml += `<td class="py-2.5 px-3 text-right font-mono ${diffClass}">${item.diff !== 0 ? diffSymbol + formatNumber(item.diff) : '-'}</td></tr>`;
+            });
+
+            tbody.innerHTML = tbHtml;
+        }
+
+        // Render Product Comparison Table
+        function renderMonthlyProductComparison(monthlyData) {
+            const thead = document.getElementById('monthly-prod-thead');
+            const tbody = document.getElementById('monthly-prod-tbody');
+
+            let thHtml = `<tr><th class="py-2.5 px-3 font-semibold">品項名稱</th>`;
+            availableMonths.forEach(m => {
+                thHtml += `<th class="py-2.5 px-3 font-semibold text-right">${escapeHtml(m)} (對/盆)</th>`;
+            });
+            thHtml += `<th class="py-2.5 px-3 font-semibold text-right">銷量差異</th></tr>`;
+            thead.innerHTML = thHtml;
+
+            const prodSet = new Set();
+            availableMonths.forEach(m => {
+                Object.keys(monthlyData[m].products).forEach(p => prodSet.add(p));
+            });
+
+            const prodArray = Array.from(prodSet).map(pName => {
+                const vals = availableMonths.map(m => monthlyData[m].products[pName] || 0);
+                const firstVal = vals[0] || 0;
+                const lastVal = vals[vals.length - 1] || 0;
+                const diff = lastVal - firstVal;
+                return { name: pName, vals, diff, maxVal: Math.max(...vals) };
+            }).sort((a, b) => b.maxVal - a.maxVal);
+
+            let tbHtml = '';
+            prodArray.forEach(item => {
+                const diffClass = item.diff > 0 ? 'text-teal-600 font-semibold' : (item.diff < 0 ? 'text-rose-600 font-semibold' : 'text-slate-400');
+                const diffSymbol = item.diff > 0 ? '+' : '';
+
+                tbHtml += `<tr class="hover:bg-slate-50 transition-colors"><td class="py-2.5 px-3 font-semibold text-slate-800">${escapeHtml(item.name)}</td>`;
+                item.vals.forEach(v => {
+                    tbHtml += `<td class="py-2.5 px-3 text-right font-mono text-slate-700">${v > 0 ? formatNumber(v) : '-'}</td>`;
+                });
+                tbHtml += `<td class="py-2.5 px-3 text-right font-mono ${diffClass}">${item.diff !== 0 ? diffSymbol + formatNumber(item.diff) : '-'}</td></tr>`;
+            });
+
+            tbody.innerHTML = tbHtml;
+        }
+
+        // Update Dashboard Elements
+        function updateDashboardUI(customers, products, totalRevenue, totalQuantity, expSummary, fileName, rowsCount) {
+            // 1. Status Bar
+            document.getElementById('status-dot').className = "w-3 h-3 rounded-full bg-emerald-500 animate-ping";
+            document.getElementById('status-text').innerText = `已成功解析資料表`;
+            document.getElementById('file-info-tag').classList.remove('hidden');
+            document.getElementById('file-info-tag').innerText = `${fileName} (${rowsCount} 筆)`;
+
+            // 2. Metrics Cards
+            document.getElementById('card-revenue').innerText = `NT$ ${formatNumber(totalRevenue)}`;
+            document.getElementById('card-quantity').innerHTML = `${formatNumber(totalQuantity)} <span class="text-xs font-normal text-slate-500">對/盆</span>`;
+            document.getElementById('card-customer-count-sub').innerText = `共 ${customers.length} 家客戶`;
+            
+            // Expense & Net Profit Calculation
+            const netProfit = totalRevenue - expSummary.total;
+            const profitIconBox = document.getElementById('profit-icon-box');
+            const profitIcon = document.getElementById('profit-icon');
+            const netProfitEl = document.getElementById('card-net-profit');
+
+            if (expSummary.hasExpenseData) {
+                document.getElementById('card-expense').innerText = `NT$ ${formatNumber(expSummary.total)}`;
+                
+                if (netProfit >= 0) {
+                    netProfitEl.innerText = `+NT$ ${formatNumber(netProfit)}`;
+                    netProfitEl.className = "text-xl sm:text-2xl font-extrabold text-emerald-600 font-mono";
+                    profitIconBox.className = "w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center";
+                    profitIcon.className = "fa-solid fa-arrow-trend-up text-base";
+                    document.getElementById('card-net-profit-sub').innerText = "營運獲利 (淨盈餘)";
+                } else {
+                    netProfitEl.innerText = `-NT$ ${formatNumber(Math.abs(netProfit))}`;
+                    netProfitEl.className = "text-xl sm:text-2xl font-extrabold text-rose-600 font-mono";
+                    profitIconBox.className = "w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center";
+                    profitIcon.className = "fa-solid fa-arrow-trend-down text-base";
+                    document.getElementById('card-net-profit-sub').innerText = "營運淨虧損";
+                }
+            } else {
+                document.getElementById('card-expense').innerText = "未提供支出";
+                netProfitEl.innerText = "--";
+                netProfitEl.className = "text-xl sm:text-2xl font-extrabold text-slate-900 font-mono";
+                profitIconBox.className = "w-9 h-9 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center";
+                profitIcon.className = "fa-solid fa-scale-balanced text-base";
+                document.getElementById('card-net-profit-sub').innerText = "上傳 CSV 包含支出進行計算";
+            }
+
+            if (products.length > 0) {
+                document.getElementById('card-top-product').innerText = products[0].name;
+                const topPct = totalQuantity > 0 ? ((products[0].qty / totalQuantity) * 100).toFixed(1) : '0.0';
+                document.getElementById('card-top-product-sub').innerText = `銷量 ${formatNumber(products[0].qty)} (占 ${topPct}%)`;
+            } else {
+                document.getElementById('card-top-product').innerText = "--";
+                document.getElementById('card-top-product-sub').innerText = "無品項資料";
+            }
+
+            // 3. Render Tables
+            renderCustomerTable(customers, totalRevenue);
+            renderProductTable(products, totalQuantity);
+
+            // 4. Render Expense Section if available
+            if (expSummary.hasExpenseData) {
+                document.getElementById('expense-section').classList.remove('hidden');
+                document.getElementById('expense-section').classList.add('grid');
+                renderExpenseTable(expSummary, totalRevenue);
+                renderExpenseChart(expSummary);
+            } else {
+                document.getElementById('expense-section').classList.add('hidden');
+            }
+
+            // 5. Render Revenue & Product Charts
+            document.getElementById('charts-section').classList.remove('hidden');
+            document.getElementById('charts-section').classList.add('grid');
+            renderCustomerChart(customers);
+            renderProductChart(products);
+        }
+
+        // Render Expense Table
+        function renderExpenseTable(expSummary, totalRevenue) {
+            const tbody = document.getElementById('expense-table-body');
+            document.getElementById('expense-total-badge').innerText = `總支出：NT$ ${formatNumber(expSummary.total)}`;
+
+            const items = [
+                { name: "人事相關費用", amount: expSummary.hr },
+                { name: "進花費用", amount: expSummary.flower },
+                { name: "花藝資材", amount: expSummary.mat },
+                { name: "固定房租與貸款", amount: expSummary.rent },
+                { name: "營運稅務與雜項", amount: expSummary.misc }
+            ];
+
+            let html = '';
+            items.forEach(item => {
+                if (item.amount > 0) {
+                    const expPct = expSummary.total > 0 ? ((item.amount / expSummary.total) * 100).toFixed(1) : '0.0';
+                    const revPct = totalRevenue > 0 ? ((item.amount / totalRevenue) * 100).toFixed(1) : '0.0';
+                    html += `
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="py-3 px-4 font-semibold text-slate-800">${item.name}</td>
+                            <td class="py-3 px-4 text-right font-mono font-bold text-slate-900">${formatNumber(item.amount)}</td>
+                            <td class="py-3 px-4 text-right font-mono text-rose-600 font-semibold">${expPct}%</td>
+                            <td class="py-3 px-4 text-right font-mono text-slate-500">${revPct}%</td>
+                        </tr>
+                    `;
+                }
+            });
+            tbody.innerHTML = html;
+        }
+
+        // Expense Doughnut Chart
+        function renderExpenseChart(expSummary) {
+            const ctx = document.getElementById('expenseChart').getContext('2d');
+            
+            const labels = [];
+            const data = [];
+            const colors = ['#f43f5e', '#ec4899', '#d946ef', '#a855f7', '#64748b'];
+
+            if (expSummary.hr > 0) { labels.push('人事費用'); data.push(expSummary.hr); }
+            if (expSummary.flower > 0) { labels.push('進花費用'); data.push(expSummary.flower); }
+            if (expSummary.mat > 0) { labels.push('花藝資材'); data.push(expSummary.mat); }
+            if (expSummary.rent > 0) { labels.push('房租與貸款'); data.push(expSummary.rent); }
+            if (expSummary.misc > 0) { labels.push('稅務與雜項'); data.push(expSummary.misc); }
+
+            if (expenseChartInstance) {
+                expenseChartInstance.destroy();
+            }
+
+            expenseChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: colors.slice(0, data.length),
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { boxWidth: 12, font: { size: 11 } }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ` ${ctx.label}: NT$ ${formatNumber(ctx.raw)}`
+                            }
+                        }
+                    },
+                    cutout: '60%'
+                }
+            });
+        }
+
+        // Customer Bar Chart
+        function renderCustomerChart(customers) {
+            const ctx = document.getElementById('customerChart').getContext('2d');
+            const top10 = customers.slice(0, 10);
+
+            if (customerChartInstance) {
+                customerChartInstance.destroy();
+            }
+
+            customerChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: top10.map(c => c.name),
+                    datasets: [{
+                        label: '營業額 (元)',
+                        data: top10.map(c => c.amount),
+                        backgroundColor: 'rgba(5, 150, 105, 0.85)',
+                        borderColor: 'rgb(5, 150, 105)',
+                        borderWidth: 1,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ` 營業額: NT$ ${formatNumber(ctx.raw)}`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { font: { size: 11 } }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: val => '$' + (val >= 1000 ? (val/1000) + 'k' : val)
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Product Doughnut Chart
+        function renderProductChart(products) {
+            const ctx = document.getElementById('productChart').getContext('2d');
+            
+            let labels = [];
+            let data = [];
+            
+            if (products.length > 5) {
+                const top5 = products.slice(0, 5);
+                const othersQty = products.slice(5).reduce((sum, p) => sum + p.qty, 0);
+                labels = [...top5.map(p => p.name), "其他品項"];
+                data = [...top5.map(p => p.qty), othersQty];
+            } else {
+                labels = products.map(p => p.name);
+                data = products.map(p => p.qty);
+            }
+
+            if (productChartInstance) {
+                productChartInstance.destroy();
+            }
+
+            productChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: [
+                            '#0d9488',
+                            '#14b8a6',
+                            '#2dd4bf',
+                            '#5eead4',
+                            '#99f6e4',
+                            '#cbd5e1'
+                        ],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { boxWidth: 12, font: { size: 11 } }
+                        }
+                    },
+                    cutout: '65%'
+                }
+            });
+        }
+
+        // Render Customer Table
+        function renderCustomerTable(customers, totalRevenue) {
+            const tbody = document.getElementById('customer-table-body');
+            document.getElementById('customer-badge').innerText = `共 ${customers.length} 家`;
+
+            let html = '';
+            customers.forEach((item, index) => {
+                const percentage = totalRevenue > 0 ? ((item.amount / totalRevenue) * 100).toFixed(1) : '0.0';
+                const rankBadgeClass = index < 3 ? 'bg-emerald-100 text-emerald-800 font-bold' : 'text-slate-500 font-mono';
+
+                html += `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="py-3 px-4 text-xs"><span class="inline-block w-6 h-6 rounded-full text-center leading-6 ${rankBadgeClass}">${index + 1}</span></td>
+                        <td class="py-3 px-4 font-semibold text-slate-800">${escapeHtml(item.name)}</td>
+                        <td class="py-3 px-4 text-right font-mono font-bold text-slate-900">${formatNumber(item.amount)}</td>
+                        <td class="py-3 px-4 text-right font-mono text-emerald-600 font-semibold">${percentage}%</td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
+        }
+
+        // Render Product Table
+        function renderProductTable(products, totalQuantity) {
+            const tbody = document.getElementById('product-table-body');
+            document.getElementById('product-badge').innerText = `共 ${products.length} 項`;
+
+            let html = '';
+            products.forEach((item, index) => {
+                const percentage = totalQuantity > 0 ? ((item.qty / totalQuantity) * 100).toFixed(1) : '0.0';
+                const rankBadgeClass = index < 3 ? 'bg-teal-100 text-teal-800 font-bold' : 'text-slate-500 font-mono';
+
+                html += `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="py-3 px-4 text-xs"><span class="inline-block w-6 h-6 rounded-full text-center leading-6 ${rankBadgeClass}">${index + 1}</span></td>
+                        <td class="py-3 px-4 font-semibold text-slate-800">${escapeHtml(item.name)}</td>
+                        <td class="py-3 px-4 text-right font-mono font-bold text-slate-900">${formatNumber(item.qty)}</td>
+                        <td class="py-3 px-4 text-right font-mono text-teal-600 font-semibold">${percentage}%</td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
+        }
+
+        // Helper: Parse numerical string safely
+        function parseNumber(val) {
+            if (val === undefined || val === null) return 0;
+            const cleaned = val.toString().replace(/,/g, '').trim();
+            const num = parseFloat(cleaned);
+            return isNaN(num) ? 0 : num;
+        }
+
+        // Helper: Format Number with Thousand Separators
+        function formatNumber(num) {
+            if (num === null || num === undefined) return '0';
+            return num.toLocaleString('zh-TW');
+        }
+
+        // Helper: Escape HTML to prevent XSS
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        // UI Error Alert Helper
+        function showError(title, message) {
+            document.getElementById('alert-title').innerText = title;
+            document.getElementById('alert-message').innerText = message;
+            document.getElementById('alert-box').classList.remove('hidden');
+        }
+
+        function closeAlert() {
+            document.getElementById('alert-box').classList.add('hidden');
+        }
+
+        // Reset Dashboard State if Parsing Fails
+        function resetDashboard() {
+            document.getElementById('status-dot').className = "w-3 h-3 rounded-full bg-rose-500";
+            document.getElementById('status-text').innerText = "資料載入失敗，請確認上傳檔案。";
+            document.getElementById('file-info-tag').classList.add('hidden');
+
+            document.getElementById('card-revenue').innerText = "--";
+            document.getElementById('card-expense').innerText = "--";
+            document.getElementById('card-net-profit').innerText = "--";
+            document.getElementById('card-quantity').innerText = "--";
+            document.getElementById('card-top-product').innerText = "--";
+            document.getElementById('card-top-product-sub').innerText = "無品項資料";
+
+            document.getElementById('customer-table-body').innerHTML = `
+                <tr><td colspan="4" class="py-12 text-center text-rose-400 text-xs">讀取失敗：請選擇正確格式的 CSV 檔案。</td></tr>
+            `;
+            document.getElementById('product-table-body').innerHTML = `
+                <tr><td colspan="4" class="py-12 text-center text-rose-400 text-xs">讀取失敗：請選擇正確格式的 CSV 檔案。</td></tr>
+            `;
+
+            document.getElementById('charts-section').classList.add('hidden');
+            document.getElementById('expense-section').classList.add('hidden');
+            document.getElementById('monthly-comparison-section').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
